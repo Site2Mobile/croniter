@@ -3,8 +3,9 @@
 
 from __future__ import absolute_import, print_function
 import re
-from time import time, mktime
-import datetime
+from time import time
+import calendar
+from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
 search_re = re.compile(r'^([^-]+)-([^-/]+)(/(.*))?$')
@@ -51,11 +52,9 @@ class croniter(object):
     bad_length = 'Exactly 5 or 6 columns has to be specified for iterator' \
                  'expression.'
 
-    def __init__(self, expr_format, start_time=time()):
-        self.tzinfo = None
-        if isinstance(start_time, datetime.datetime):
-            self.tzinfo = start_time.tzinfo
-            start_time = mktime(start_time.timetuple())
+    def __init__(self, expr_format, start_time=None):
+        if start_time == None:
+            start_time = datetime.now()
 
         self.cur = start_time
         self.exprs = expr_format.split()
@@ -96,11 +95,11 @@ class croniter(object):
                     low, high, step = map(int, [low, high, step])
                     e_list += range(low, high + 1, step)
                     # other solution
-                    #try:
+                    # try:
                     #    for j in xrange(int(low), int(high) + 1):
                     #        if j % int(step) == 0:
                     #            e_list.append(j)
-                    #except NameError:
+                    # except NameError:
                     #    for j in range(int(low), int(high) + 1):
                     #        if j % int(step) == 0:
                     #            e_list.append(j)
@@ -116,8 +115,11 @@ class croniter(object):
                     if t in self.LOWMAP[i]:
                         t = self.LOWMAP[i][t]
 
-                    if t not in ["*", "l"] and (int(t) < self.RANGES[i][0] or
-                                     int(t) > self.RANGES[i][1]):
+                    if (
+                        t not in ["*", "l"]
+                        and (int(t) < self.RANGES[i][0] or
+                             int(t) > self.RANGES[i][1])
+                    ):
                         raise ValueError(
                             "[{0}] is not acceptable, out of range".format(
                                 expr_format))
@@ -130,15 +132,13 @@ class croniter(object):
                             else res)
         self.expanded = expanded
 
-    def get_next(self, ret_type=float):
-        return self._get_next(ret_type, is_prev=False)
+    def get_next(self):
+        return self._get_next(is_prev=False)
 
-    def get_prev(self, ret_type=float):
-        return self._get_next(ret_type, is_prev=True)
+    def get_prev(self):
+        return self._get_next(is_prev=True)
 
-    def get_current(self, ret_type=float):
-        if ret_type == datetime.datetime:
-            return datetime.datetime.fromtimestamp(self.cur)
+    def get_current(self):
         return self.cur
 
     # iterator protocol, to enable direct use of croniter
@@ -149,27 +149,21 @@ class croniter(object):
         return self
     __next__ = next = get_next
 
-    def all_next(self, ret_type=float):
-        '''Generator of all consecutive dates. Can be used instead of
-        implicit call to __iter__, whenever non-default
-        'ret_type' has to be specified.
+    def all_next(self):
+        '''Generator of all consecutive dates.
         '''
         while True:
-            yield self._get_next(ret_type, is_prev=False)
+            yield self._get_next(is_prev=False)
 
-    def all_prev(self, ret_type=float):
+    def all_prev(self):
         '''Generator of all previous dates.'''
         while True:
-            yield self._get_next(ret_type, is_prev=True)
+            yield self._get_next(is_prev=True)
 
     iter = all_next  # alias, you can call .iter() instead of .all_next()
 
-    def _get_next(self, ret_type=float, is_prev=False):
+    def _get_next(self, is_prev=False):
         expanded = self.expanded[:]
-
-        if ret_type not in (float, datetime.datetime):
-            raise TypeError("Invalid ret_type, only 'float' or 'datetime' "
-                            "is acceptable.")
 
         if expanded[2][0] != '*' and expanded[4][0] != '*':
             bak = expanded[4]
@@ -187,10 +181,6 @@ class croniter(object):
             result = self._calc(self.cur, expanded, is_prev)
         self.cur = result
 
-        if ret_type == datetime.datetime:
-            result = datetime.datetime.fromtimestamp(result)
-            if self.tzinfo:
-                result = self.tzinfo.localize(result)
         return result
 
     def _calc(self, now, expanded, is_prev):
@@ -202,7 +192,8 @@ class croniter(object):
             sign = 1
 
         offset = len(expanded) == 6 and 1 or 60
-        dst = now = datetime.datetime.fromtimestamp(now + sign * offset)
+        now += relativedelta(seconds=sign * offset)
+        dst = now
 
         day, month, year = dst.day, dst.month, dst.year
         current_year = now.year
@@ -318,7 +309,7 @@ class croniter(object):
                     break
             if next:
                 continue
-            return mktime(dst.timetuple())
+            return dst
 
         raise Exception("failed to find prev date")
 
@@ -368,7 +359,7 @@ class croniter(object):
 
 if __name__ == '__main__':
 
-    base = datetime.datetime(2010, 1, 25)
+    base = datetime(2010, 1, 25)
     itr = croniter('0 0 1 * *', base)
-    n1 = itr.get_next(datetime.datetime)
+    n1 = itr.get_next(datetime)
     print(n1)
